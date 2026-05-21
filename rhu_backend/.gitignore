@@ -1,0 +1,18 @@
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+
+# But allow safe example file
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+
+# Build/cache
+dist/
+build/
