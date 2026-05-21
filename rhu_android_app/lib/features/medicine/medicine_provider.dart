@@ -15,7 +15,8 @@ class MedicineProvider extends ChangeNotifier {
     LocalStorageService? localStorageService,
   })  : _medicineRepository = medicineRepository ?? MedicineRepository(),
         _offlineQueueService = offlineQueueService ?? OfflineQueueService(),
-        _localStorageService = localStorageService ?? LocalStorageService();
+        _localStorageService =
+            localStorageService ?? LocalStorageService();
 
   final MedicineRepository _medicineRepository;
   final OfflineQueueService _offlineQueueService;
@@ -24,7 +25,6 @@ class MedicineProvider extends ChangeNotifier {
   final List<MedicineModel> _medicines = <MedicineModel>[];
   final List<MedicineTransactionModel> _transactions =
       <MedicineTransactionModel>[];
-
   final Map<String, int> _localStockOverrides = <String, int>{};
 
   bool _isLoading = false;
@@ -37,9 +37,9 @@ class MedicineProvider extends ChangeNotifier {
 
   String _searchQuery = '';
   String? _stockStatusFilter;
-
   String? _rhuFilter;
   String? _barangayFilter;
+  String? _viewScopeFilter;
 
   List<MedicineModel> get medicines {
     return List<MedicineModel>.unmodifiable(_medicines);
@@ -59,9 +59,9 @@ class MedicineProvider extends ChangeNotifier {
 
   String get searchQuery => _searchQuery;
   String? get stockStatusFilter => _stockStatusFilter;
-
   String? get rhuFilter => _rhuFilter;
   String? get barangayFilter => _barangayFilter;
+  String? get viewScopeFilter => _viewScopeFilter;
 
   bool get hasMedicines => _medicines.isNotEmpty;
   bool get hasTransactions => _transactions.isNotEmpty;
@@ -73,7 +73,9 @@ class MedicineProvider extends ChangeNotifier {
   }
 
   int get outOfStockCount {
-    return _medicines.where((MedicineModel item) => item.isOutOfStock).length;
+    return _medicines
+        .where((MedicineModel item) => item.isOutOfStock)
+        .length;
   }
 
   int get expiredCount {
@@ -93,9 +95,36 @@ class MedicineProvider extends ChangeNotifier {
 
   Future<void> loadMedicines({
     bool refresh = false,
+    String? search,
+    String? stockStatus,
+    String? rhuId,
+    String? barangayId,
+    String? viewScope,
   }) async {
     if (_isLoading || _isRefreshing) {
       return;
+    }
+
+    if (search != null) {
+      _searchQuery = search.trim();
+    }
+
+    if (stockStatus != null || stockStatus == null) {
+      _stockStatusFilter = stockStatus;
+    }
+
+    if (rhuId != null) {
+      _rhuFilter = rhuId.trim().isEmpty ? null : rhuId.trim();
+    }
+
+    if (barangayId != null) {
+      _barangayFilter =
+          barangayId.trim().isEmpty ? null : barangayId.trim();
+    }
+
+    if (viewScope != null) {
+      _viewScopeFilter =
+          viewScope.trim().isEmpty ? null : viewScope.trim();
     }
 
     if (refresh) {
@@ -114,6 +143,7 @@ class MedicineProvider extends ChangeNotifier {
         stockStatus: _stockStatusFilter,
         rhuId: _rhuFilter,
         barangayId: _barangayFilter,
+        viewScope: _viewScopeFilter,
       );
 
       _medicines
@@ -221,7 +251,6 @@ class MedicineProvider extends ChangeNotifier {
 
       _successMessage = 'Medicine transaction recorded successfully.';
       _lastTransactionWasOffline = false;
-
       notifyListeners();
 
       return true;
@@ -229,7 +258,6 @@ class MedicineProvider extends ChangeNotifier {
       if (!_shouldSaveOffline(error)) {
         _errorMessage = error.message;
         notifyListeners();
-
         return false;
       }
 
@@ -269,6 +297,7 @@ class MedicineProvider extends ChangeNotifier {
   }) async {
     try {
       final int currentStock = effectiveStockFor(medicine);
+
       final int newStock = _calculateNewStock(
         currentStock: currentStock,
         transactionType: transactionType,
@@ -279,7 +308,6 @@ class MedicineProvider extends ChangeNotifier {
         _errorMessage =
             'Cannot dispense $quantity ${medicine.unit}. Current stock is only $currentStock ${medicine.unit}.';
         notifyListeners();
-
         return false;
       }
 
@@ -306,14 +334,12 @@ class MedicineProvider extends ChangeNotifier {
           'Transaction saved offline. It will sync automatically when internet returns.';
       _lastTransactionWasOffline = true;
       _errorMessage = null;
-
       notifyListeners();
 
       return true;
     } catch (_) {
       _errorMessage = 'Unable to save transaction offline.';
       notifyListeners();
-
       return false;
     }
   }
@@ -358,22 +384,24 @@ class MedicineProvider extends ChangeNotifier {
 
   Future<void> searchMedicines(String value) async {
     _searchQuery = value.trim();
-
     await loadMedicines(refresh: true);
   }
 
   Future<void> setStockStatusFilter(String? value) async {
     _stockStatusFilter = value;
-
     await loadMedicines(refresh: true);
   }
 
   Future<void> setLocationFilter({
     String? rhuId,
     String? barangayId,
+    String? viewScope,
   }) async {
-    _rhuFilter = rhuId;
-    _barangayFilter = barangayId;
+    _rhuFilter = rhuId?.trim().isEmpty == true ? null : rhuId?.trim();
+    _barangayFilter =
+        barangayId?.trim().isEmpty == true ? null : barangayId?.trim();
+    _viewScopeFilter =
+        viewScope?.trim().isEmpty == true ? null : viewScope?.trim();
 
     await loadMedicines(refresh: true);
   }
@@ -383,6 +411,7 @@ class MedicineProvider extends ChangeNotifier {
     _stockStatusFilter = null;
     _rhuFilter = null;
     _barangayFilter = null;
+    _viewScopeFilter = null;
 
     await loadMedicines(refresh: true);
   }
