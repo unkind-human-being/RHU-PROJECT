@@ -2,8 +2,10 @@ const { RtcTokenBuilder, RtcRole } = require("agora-access-token");
 
 const Appointment = require("../models/Appointment");
 const VideoCallLog = require("../models/VideoCallLog");
+const User = require("../models/User");
 const { asyncHandler } = require("../middleware/errorMiddleware");
 const { USER_ROLES } = require("../utils/constants");
+const { getFirebaseMessaging } = require("../config/firebaseAdmin");
 
 const getIdString = (value) => {
   if (!value) return null;
@@ -49,9 +51,13 @@ const getAppointmentIdFromChannel = (channelName) => {
 
 const populateCallLog = (query) => {
   return query
-    .populate("appointment", "serviceType appointmentType status scheduledAt patientFirstName patientLastName")
+    .populate(
+      "appointment",
+      "serviceType appointmentType status scheduledAt patientFirstName patientLastName requestedBy"
+    )
     .populate("rhu", "name code municipality province")
     .populate("startedBy", "fullName email role")
+    .populate("receiver", "fullName email role phoneNumber")
     .populate("endedBy", "fullName email role")
     .populate("participants.user", "fullName email role");
 };
@@ -172,11 +178,7 @@ const getAppointmentForChannel = async (req, channelName) => {
   };
 };
 
-const addParticipantToCallLog = async ({
-  callLog,
-  req,
-  uid,
-}) => {
+const addParticipantToCallLog = async ({ callLog, req, uid }) => {
   const userId = req.userId.toString();
 
   const existingParticipant = callLog.participants.find((participant) => {
@@ -206,7 +208,9 @@ const getOrCreateActiveCallLog = async ({
   let callLog = await VideoCallLog.findOne({
     appointment: appointment._id,
     channelName,
-    status: VideoCallLog.statuses.ACTIVE,
+    status: {
+      $in: [VideoCallLog.statuses.RINGING, VideoCallLog.statuses.ACTIVE],
+    },
   }).sort({
     startedAt: -1,
   });
@@ -223,6 +227,12 @@ const getOrCreateActiveCallLog = async ({
     });
   }
 
+  if (callLog.status === VideoCallLog.statuses.RINGING) {
+    callLog.status = VideoCallLog.statuses.ACTIVE;
+    callLog.acceptedAt = callLog.acceptedAt || new Date();
+    await callLog.save();
+  }
+
   await addParticipantToCallLog({
     callLog,
     req,
@@ -230,6 +240,78 @@ const getOrCreateActiveCallLog = async ({
   });
 
   return callLog;
+};
+
+const buildCallPayload = (callLog) => {
+  return {
+    type: "incoming_call",
+    callId: callLog._id.toString(),
+    appointmentId: callLog.appointment.toString(),
+    channelName: callLog.channelName,
+    callerName: callLog.callerName || "RHU Admin",
+    rhuName: callLog.rhuName || "RHU Video Consultation",
+  };
+};
+
+const sendIncomingCallFcm = async ({ receiver, payload }) => {
+  const messaging = getFirebaseMessaging();
+
+  if (!messaging) {
+    return {
+      sent: false,
+      error: "Firebase messaging is not configured.",
+    };
+  }
+
+  const tokens = (receiver.fcmTokens || [])
+    .map((item) => item.token)
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return {
+      sent: false,
+      error: "Receiver has no FCM token.",
+    };
+  }
+
+  const dataPayload = Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => [key, String(value)])
+  );
+
+  try {
+    let response;
+
+    if (typeof messaging.sendEachForMulticast === "function") {
+      response = await messaging.sendEachForMulticast({
+        tokens,
+        data: dataPayload,
+        android: {
+          priority: "high",
+        },
+      });
+    } else {
+      response = await messaging.sendMulticast({
+        tokens,
+        data: dataPayload,
+        android: {
+          priority: "high",
+        },
+      });
+    }
+
+    return {
+      sent: response.successCount > 0,
+      error:
+        response.failureCount > 0
+          ? `${response.failureCount} FCM token(s) failed.`
+          : "",
+    };
+  } catch (error) {
+    return {
+      sent: false,
+      error: error.message,
+    };
+  }
 };
 
 const getAgoraToken = asyncHandler(async (req, res) => {
@@ -336,7 +418,9 @@ const markVideoCallEnded = asyncHandler(async (req, res) => {
   const callLog = await VideoCallLog.findOne({
     appointment: appointment._id,
     channelName,
-    status: VideoCallLog.statuses.ACTIVE,
+    status: {
+      $in: [VideoCallLog.statuses.RINGING, VideoCallLog.statuses.ACTIVE],
+    },
   }).sort({
     startedAt: -1,
   });
@@ -404,9 +488,263 @@ const getAppointmentVideoCallLogs = asyncHandler(async (req, res) => {
   });
 });
 
+const startVideoCall = asyncHandler(async (req, res) => {
+  const { appointmentId, receiverId, channelName } = req.body;
+
+  if (!appointmentId) {
+    return res.status(400).json({
+      success: false,
+      message: "appointmentId is required.",
+    });
+  }
+
+  const appointment = await Appointment.findById(appointmentId)
+    .populate("requestedBy", "fullName email phoneNumber fcmTokens")
+    .populate("rhu", "name code municipality province");
+
+  if (!appointment) {
+    return res.status(404).json({
+      success: false,
+      message: "Appointment not found.",
+    });
+  }
+
+  if (appointment.status !== Appointment.statuses.ACCEPTED) {
+    return res.status(400).json({
+      success: false,
+      message: "Only accepted appointments can start video calls.",
+    });
+  }
+
+  if (appointment.appointmentType !== Appointment.types.ONLINE) {
+    return res.status(400).json({
+      success: false,
+      message: "Video call is only available for online consultations.",
+    });
+  }
+
+  if (req.user.role === USER_ROLES.RHU_ADMIN) {
+    if (getUserRhuId(req) !== getIdString(appointment.rhu)) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only start video calls under your assigned RHU.",
+      });
+    }
+  }
+
+  if (
+    req.user.role !== USER_ROLES.RHU_ADMIN &&
+    req.user.role !== USER_ROLES.IPHO_ADMIN
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Only RHU admins can start incoming video calls.",
+    });
+  }
+
+  let receiver = null;
+
+  if (receiverId) {
+    receiver = await User.findById(receiverId);
+  }
+
+  if (!receiver) {
+    receiver = appointment.requestedBy;
+  }
+
+  if (!receiver) {
+    return res.status(400).json({
+      success: false,
+      message: "Public user receiver was not found for this appointment.",
+    });
+  }
+
+  const safeChannelName =
+    channelName && validateChannelName(channelName)
+      ? channelName.trim()
+      : `rhu_appointment_${appointment._id}`;
+
+  const callerName = req.user.fullName || "RHU Admin";
+  const rhuName =
+    appointment.rhu && appointment.rhu.name
+      ? appointment.rhu.name
+      : "RHU Video Consultation";
+
+  const existingCall = await VideoCallLog.findOne({
+    appointment: appointment._id,
+    channelName: safeChannelName,
+    status: {
+      $in: [VideoCallLog.statuses.RINGING, VideoCallLog.statuses.ACTIVE],
+    },
+  }).sort({
+    startedAt: -1,
+  });
+
+  const callLog =
+    existingCall ||
+    (await VideoCallLog.create({
+      appointment: appointment._id,
+      rhu: appointment.rhu._id || appointment.rhu,
+      channelName: safeChannelName,
+      startedBy: req.userId,
+      receiver: receiver._id || receiver.id,
+      callerName,
+      rhuName,
+      status: VideoCallLog.statuses.RINGING,
+      startedAt: new Date(),
+      participants: [],
+    }));
+
+  const payload = buildCallPayload(callLog);
+
+  const fcmResult = await sendIncomingCallFcm({
+    receiver,
+    payload,
+  });
+
+  callLog.fcmSent = fcmResult.sent;
+  callLog.fcmError = fcmResult.error || "";
+  await callLog.save();
+
+  return res.status(201).json({
+    success: true,
+    message: fcmResult.sent
+      ? "Incoming call started and notification sent."
+      : "Incoming call started, but notification was not sent.",
+    data: {
+      call: callLog.toSafeObject(),
+      payload,
+      fcm: fcmResult,
+    },
+  });
+});
+
+const getIncomingCall = asyncHandler(async (req, res) => {
+  const callLog = await populateCallLog(
+    VideoCallLog.findOne({
+      receiver: req.userId,
+      status: VideoCallLog.statuses.RINGING,
+    }).sort({
+      createdAt: -1,
+    })
+  );
+
+  if (!callLog) {
+    return res.status(200).json({
+      success: true,
+      message: "No incoming call.",
+      data: null,
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    message: "Incoming call fetched successfully.",
+    data: {
+      call: callLog.toSafeObject(),
+      payload: buildCallPayload(callLog),
+    },
+  });
+});
+
+const acceptVideoCall = asyncHandler(async (req, res) => {
+  const callLog = await VideoCallLog.findById(req.params.callId);
+
+  if (!callLog) {
+    return res.status(404).json({
+      success: false,
+      message: "Call not found.",
+    });
+  }
+
+  if (getIdString(callLog.receiver) !== req.userId.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: "You can only accept your own incoming call.",
+    });
+  }
+
+  callLog.status = VideoCallLog.statuses.ACTIVE;
+  callLog.acceptedAt = callLog.acceptedAt || new Date();
+
+  await callLog.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "Call accepted.",
+    data: {
+      call: callLog.toSafeObject(),
+      payload: buildCallPayload(callLog),
+    },
+  });
+});
+
+const declineVideoCall = asyncHandler(async (req, res) => {
+  const callLog = await VideoCallLog.findById(req.params.callId);
+
+  if (!callLog) {
+    return res.status(404).json({
+      success: false,
+      message: "Call not found.",
+    });
+  }
+
+  if (getIdString(callLog.receiver) !== req.userId.toString()) {
+    return res.status(403).json({
+      success: false,
+      message: "You can only decline your own incoming call.",
+    });
+  }
+
+  callLog.status = VideoCallLog.statuses.DECLINED;
+  callLog.declinedAt = new Date();
+  callLog.endedAt = new Date();
+  callLog.endedBy = req.userId;
+
+  await callLog.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "Call declined.",
+    data: callLog.toSafeObject(),
+  });
+});
+
+const endVideoCall = asyncHandler(async (req, res) => {
+  const callLog = await VideoCallLog.findById(req.params.callId);
+
+  if (!callLog) {
+    return res.status(404).json({
+      success: false,
+      message: "Call not found.",
+    });
+  }
+
+  callLog.status = VideoCallLog.statuses.ENDED;
+  callLog.endedAt = new Date();
+  callLog.endedBy = req.userId;
+  callLog.durationSeconds = Math.max(
+    0,
+    Math.floor((callLog.endedAt.getTime() - callLog.startedAt.getTime()) / 1000)
+  );
+
+  await callLog.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "Call ended.",
+    data: callLog.toSafeObject(),
+  });
+});
+
 module.exports = {
   getAgoraToken,
   markVideoCallJoined,
   markVideoCallEnded,
   getAppointmentVideoCallLogs,
+  startVideoCall,
+  getIncomingCall,
+  acceptVideoCall,
+  declineVideoCall,
+  endVideoCall,
 };

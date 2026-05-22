@@ -15,6 +15,36 @@ const AUTH_PROVIDERS = {
   GOOGLE: "google",
 };
 
+const fcmTokenSchema = new mongoose.Schema(
+  {
+    token: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    platform: {
+      type: String,
+      trim: true,
+      default: "android",
+    },
+
+    purpose: {
+      type: String,
+      trim: true,
+      default: "incoming_call",
+    },
+
+    lastUsedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: false,
+  }
+);
+
 const userSchema = new mongoose.Schema(
   {
     fullName: {
@@ -31,10 +61,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-      match: [
-        /^\S+@\S+\.\S+$/,
-        "Please provide a valid email address.",
-      ],
+      match: [/^\S+@\S+\.\S+$/, "Please provide a valid email address."],
     },
 
     password: {
@@ -92,6 +119,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
       maxlength: [30, "Phone number cannot exceed 30 characters."],
       default: "",
+    },
+
+    fcmTokens: {
+      type: [fcmTokenSchema],
+      default: [],
     },
 
     isActive: {

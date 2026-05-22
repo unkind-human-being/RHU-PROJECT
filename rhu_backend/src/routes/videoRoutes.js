@@ -5,6 +5,11 @@ const {
   markVideoCallJoined,
   markVideoCallEnded,
   getAppointmentVideoCallLogs,
+  startVideoCall,
+  getIncomingCall,
+  acceptVideoCall,
+  declineVideoCall,
+  endVideoCall,
 } = require("../controllers/videoController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -22,5 +27,11 @@ router.get(
   protect,
   getAppointmentVideoCallLogs
 );
+
+router.post("/calls/start", protect, startVideoCall);
+router.get("/calls/incoming", protect, getIncomingCall);
+router.patch("/calls/:callId/accept", protect, acceptVideoCall);
+router.patch("/calls/:callId/decline", protect, declineVideoCall);
+router.patch("/calls/:callId/end", protect, endVideoCall);
 
 module.exports = router;

@@ -11,6 +11,7 @@ const {
   reactivateUser,
   deleteUser,
   resetUserPassword,
+  saveFcmToken,
 } = require("../controllers/userController");
 
 const { protect } = require("../middleware/authMiddleware");
@@ -26,6 +27,8 @@ const router = express.Router();
 router.get("/", protect, isStaff, getUsers);
 
 router.post("/", protect, isAdmin, createUser);
+
+router.post("/fcm-token", protect, saveFcmToken);
 
 router.post(
   "/health-worker",

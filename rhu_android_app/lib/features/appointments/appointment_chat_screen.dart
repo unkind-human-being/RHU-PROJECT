@@ -51,7 +51,11 @@ class _AppointmentChatScreenState extends State<AppointmentChatScreen> {
       return false;
     }
 
-    return _readString(appointment, <String>['appointmentType']) == 'online';
+    return _readString(
+          appointment,
+          <String>['appointmentType', 'type'],
+        ).toLowerCase() ==
+        'online';
   }
 
   String get _videoChannelName {
@@ -278,13 +282,68 @@ class _AppointmentChatScreenState extends State<AppointmentChatScreen> {
       _isStartingVideoCall = true;
     });
 
+    String callId = '';
+
+    try {
+      final Map<String, dynamic> startCallResponse = await _apiClient.post(
+        '/api/video/calls/start',
+        requiresAuth: true,
+        body: <String, dynamic>{
+          'appointmentId': _appointmentId,
+          'receiverId': _patientUserId(_appointment ?? <String, dynamic>{}),
+          'channelName': _videoChannelName,
+        },
+      );
+
+      callId = _extractCallId(startCallResponse);
+
+      await _sendVideoCallChatBackup();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Incoming video call sent to patient.'),
+          backgroundColor: Color(0xFF2563EB),
+        ),
+      );
+
+      _openVideoScreen(
+        channelName: _videoChannelName,
+        callId: callId,
+      );
+    } on ApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      _showError(error.message);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      _showError('Unable to start incoming video call.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isStartingVideoCall = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendVideoCallChatBackup() async {
     try {
       final Map<String, dynamic> response = await _apiClient.post(
         '/api/consultation-messages/appointment/${Uri.encodeComponent(_appointmentId)}/video-call',
         requiresAuth: true,
         body: <String, dynamic>{
           'videoChannelName': _videoChannelName,
-          'body': 'Video consultation started. Tap Join Video Call to enter.',
+          'body':
+              'RHU Admin is calling you for your online consultation. Please accept the incoming call notification.',
         },
       );
 
@@ -298,46 +357,22 @@ class _AppointmentChatScreenState extends State<AppointmentChatScreen> {
       setState(() {
         _messages.add(createdMessage);
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Video call invite sent to patient.'),
-          backgroundColor: Color(0xFF2563EB),
-        ),
-      );
-
-      _openVideoScreen(
-        channelName: _videoChannelName,
-      );
-    } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      _showError(error.message);
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      _showError('Unable to start video call.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isStartingVideoCall = false;
-        });
-      }
+      // The incoming call notification is the main action.
+      // The chat backup should not block the video call.
     }
   }
 
   void _openVideoScreen({
     required String channelName,
+    String callId = '',
   }) {
     Navigator.of(context).pushNamed(
       '/video-call',
       arguments: <String, dynamic>{
         'appointmentId': _appointmentId,
         'channelName': channelName,
+        'callId': callId,
         'patientName': _patientName(_appointment ?? <String, dynamic>{}),
         'appointment': _appointment ?? <String, dynamic>{},
       },
@@ -569,6 +604,45 @@ class _AppointmentChatScreenState extends State<AppointmentChatScreen> {
         );
       },
     );
+  }
+
+  String _extractCallId(Map<String, dynamic> response) {
+    final dynamic data = response['data'];
+
+    if (data is Map<String, dynamic>) {
+      final dynamic call = data['call'];
+
+      if (call is Map<String, dynamic>) {
+        final String callId = _readString(
+          call,
+          <String>['_id', 'id'],
+        );
+
+        if (callId.trim().isNotEmpty) {
+          return callId;
+        }
+      }
+
+      final dynamic payload = data['payload'];
+
+      if (payload is Map<String, dynamic>) {
+        return _readString(
+          payload,
+          <String>['callId', 'call_id', 'id'],
+        );
+      }
+    }
+
+    final dynamic call = response['call'];
+
+    if (call is Map<String, dynamic>) {
+      return _readString(
+        call,
+        <String>['_id', 'id'],
+      );
+    }
+
+    return '';
   }
 
   void _showError(String message) {
@@ -1244,6 +1318,10 @@ class _MessageDetailsSheet extends StatelessWidget {
                           <String>['_id', 'id'],
                         ),
                         'channelName': videoChannelName,
+                        'callId': _readString(
+                          message,
+                          <String>['callId', 'videoCallId'],
+                        ),
                         'patientName': _patientName(
                           appointment ?? <String, dynamic>{},
                         ),
@@ -1500,6 +1578,33 @@ String _patientName(Map<String, dynamic> appointment) {
   }
 
   return parts.join(' ');
+}
+
+String _patientUserId(Map<String, dynamic> appointment) {
+  final dynamic requestedBy = appointment['requestedBy'];
+
+  if (requestedBy is Map<String, dynamic>) {
+    return _readString(
+      requestedBy,
+      <String>['_id', 'id'],
+    );
+  }
+
+  if (requestedBy is String) {
+    return requestedBy.trim();
+  }
+
+  return _readString(
+    appointment,
+    <String>[
+      'requestedBy',
+      'requestedById',
+      'publicUser',
+      'publicUserId',
+      'patientUser',
+      'patientUserId',
+    ],
+  );
 }
 
 String _prettyService(String value) {

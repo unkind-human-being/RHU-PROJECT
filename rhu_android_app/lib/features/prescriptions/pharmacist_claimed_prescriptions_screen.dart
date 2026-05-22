@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -165,10 +167,73 @@ class _PharmacistClaimedPrescriptionsScreenState
     final dynamic data = response['data'];
 
     if (data is Map<String, dynamic>) {
-      return data;
+      final dynamic prescription = data['prescription'];
+      final dynamic record = data['record'];
+      final dynamic result = data['result'];
+      final dynamic item = data['item'];
+
+      if (prescription is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(prescription);
+      }
+
+      if (record is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(record);
+      }
+
+      if (result is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(result);
+      }
+
+      if (item is Map<String, dynamic>) {
+        return Map<String, dynamic>.from(item);
+      }
+
+      return Map<String, dynamic>.from(data);
+    }
+
+    final dynamic prescription = response['prescription'];
+    final dynamic record = response['record'];
+    final dynamic result = response['result'];
+    final dynamic item = response['item'];
+
+    if (prescription is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(prescription);
+    }
+
+    if (record is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(record);
+    }
+
+    if (result is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(result);
+    }
+
+    if (item is Map<String, dynamic>) {
+      return Map<String, dynamic>.from(item);
     }
 
     return response;
+  }
+
+  bool _isOfflineError(Object error) {
+    if (error is SocketException) {
+      return true;
+    }
+
+    if (error is TimeoutException) {
+      return true;
+    }
+
+    final String errorText = error.toString().toLowerCase();
+
+    return errorText.contains('socketexception') ||
+        errorText.contains('failed host lookup') ||
+        errorText.contains('connection refused') ||
+        errorText.contains('connection timed out') ||
+        errorText.contains('network is unreachable') ||
+        errorText.contains('networkerror') ||
+        errorText.contains('clientexception') ||
+        errorText.contains('xmlhttprequest error');
   }
 
   Future<List<Map<String, dynamic>>> _readPendingClaims() async {
@@ -283,8 +348,23 @@ class _PharmacistClaimedPrescriptionsScreenState
         try {
           await _sendClaimToServer(pendingClaim);
           syncedCount++;
-        } catch (_) {
-          stillPending.add(pendingClaim);
+        } on ApiException catch (error) {
+          final String message = error.message.toLowerCase();
+
+          if (message.contains('already claimed') ||
+              message.contains('already been claimed') ||
+              message.contains('status') ||
+              message.contains('not issued')) {
+            syncedCount++;
+          } else {
+            stillPending.add(pendingClaim);
+          }
+        } catch (error) {
+          if (_isOfflineError(error)) {
+            stillPending.add(pendingClaim);
+          } else {
+            stillPending.add(pendingClaim);
+          }
         }
       }
 
@@ -531,13 +611,33 @@ class _PharmacistClaimedPrescriptionsScreenState
       }
 
       _showError(error.message);
-    } catch (_) {
+    } catch (error) {
+      if (!_isOfflineError(error)) {
+        if (!mounted) {
+          return;
+        }
+
+        _showError(
+          'Unable to claim prescription. Server returned an unexpected response. Please refresh and try again.',
+        );
+        return;
+      }
+
       final List<Map<String, dynamic>> pendingClaims =
           await _readPendingClaims();
 
-      pendingClaims.insert(0, claimData);
+      final bool alreadyPending = pendingClaims.any(
+        (Map<String, dynamic> pendingClaim) {
+          return (pendingClaim['prescriptionId'] ?? '').toString() ==
+                  prescriptionId ||
+              (pendingClaim['token'] ?? '').toString() == token;
+        },
+      );
 
-      await _savePendingClaims(pendingClaims);
+      if (!alreadyPending) {
+        pendingClaims.insert(0, claimData);
+        await _savePendingClaims(pendingClaims);
+      }
 
       if (!mounted) {
         return;
@@ -550,7 +650,7 @@ class _PharmacistClaimedPrescriptionsScreenState
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Claim saved offline. It will sync when internet returns.',
+            'No internet connection. Claim saved as pending and will sync when connection returns.',
           ),
           backgroundColor: Color(0xFFF59E0B),
         ),

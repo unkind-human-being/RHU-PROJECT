@@ -1,9 +1,12 @@
 const mongoose = require("mongoose");
 
 const VIDEO_CALL_STATUS = Object.freeze({
+  RINGING: "ringing",
   ACTIVE: "active",
+  DECLINED: "declined",
   ENDED: "ended",
   MISSED: "missed",
+  FAILED: "failed",
 });
 
 const videoCallParticipantSchema = new mongoose.Schema(
@@ -64,10 +67,39 @@ const videoCallLogSchema = new mongoose.Schema(
       required: true,
     },
 
+    receiver: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    callerName: {
+      type: String,
+      trim: true,
+      default: "RHU Admin",
+    },
+
+    rhuName: {
+      type: String,
+      trim: true,
+      default: "RHU Video Consultation",
+    },
+
     startedAt: {
       type: Date,
       default: Date.now,
       index: true,
+    },
+
+    acceptedAt: {
+      type: Date,
+      default: null,
+    },
+
+    declinedAt: {
+      type: Date,
+      default: null,
     },
 
     participants: {
@@ -94,8 +126,19 @@ const videoCallLogSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: Object.values(VIDEO_CALL_STATUS),
-      default: VIDEO_CALL_STATUS.ACTIVE,
+      default: VIDEO_CALL_STATUS.RINGING,
       index: true,
+    },
+
+    fcmSent: {
+      type: Boolean,
+      default: false,
+    },
+
+    fcmError: {
+      type: String,
+      trim: true,
+      default: "",
     },
   },
   {
@@ -105,6 +148,7 @@ const videoCallLogSchema = new mongoose.Schema(
 
 videoCallLogSchema.index({ appointment: 1, startedAt: -1 });
 videoCallLogSchema.index({ channelName: 1, status: 1 });
+videoCallLogSchema.index({ receiver: 1, status: 1, createdAt: -1 });
 
 videoCallLogSchema.methods.toSafeObject = function () {
   const log = this.toObject();

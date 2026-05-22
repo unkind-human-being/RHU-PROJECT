@@ -790,6 +790,49 @@ const resetUserPassword = asyncHandler(async (req, res) => {
   });
 });
 
+
+const saveFcmToken = asyncHandler(async (req, res) => {
+  const { fcmToken, platform = "android", purpose = "incoming_call" } = req.body;
+
+  if (!fcmToken || !fcmToken.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "FCM token is required.",
+    });
+  }
+
+  const user = await User.findById(req.userId);
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: "User not found.",
+    });
+  }
+
+  user.fcmTokens = user.fcmTokens || [];
+
+  user.fcmTokens = user.fcmTokens.filter((item) => {
+    return item.token !== fcmToken.trim();
+  });
+
+  user.fcmTokens.push({
+    token: fcmToken.trim(),
+    platform,
+    purpose,
+    lastUsedAt: new Date(),
+  });
+
+  await user.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "FCM token saved successfully.",
+  });
+});
+
+
+
 module.exports = {
   getUsers,
   getUserById,
@@ -801,4 +844,5 @@ module.exports = {
   reactivateUser,
   deleteUser,
   resetUserPassword,
+  saveFcmToken,
 };

@@ -18,9 +18,8 @@ class ApiConstants {
 
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:5000',
+    defaultValue: 'https://rhu-project.onrender.com',
   );
-
   static const Duration requestTimeout = Duration(seconds: 30);
 
   static const Map<String, String> defaultHeaders = <String, String>{

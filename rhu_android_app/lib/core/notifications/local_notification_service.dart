@@ -11,9 +11,15 @@ class LocalNotificationService {
   static const String _channelDescription =
       'Notifications for medicine transaction syncing.';
 
+  static bool _initialized = false;
+
   static Future<void> initialize({
     bool requestPermission = true,
   }) async {
+    if (_initialized) {
+      return;
+    }
+
     const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
@@ -21,9 +27,7 @@ class LocalNotificationService {
       android: androidSettings,
     );
 
-    await _plugin.initialize(
-      settings: settings,
-    );
+    await _plugin.initialize(settings);
 
     if (requestPermission) {
       await _plugin
@@ -43,11 +47,48 @@ class LocalNotificationService {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
+
+    _initialized = true;
   }
 
   static Future<void> showMedicineSyncSuccess({
     required int syncedCount,
   }) async {
+    await initialize(requestPermission: false);
+
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDescription,
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+    );
+
+    final String body = syncedCount == 1
+        ? '1 pending medicine transaction was synced successfully.'
+        : '$syncedCount pending medicine transactions were synced successfully.';
+
+    await _plugin.show(
+      1001,
+      'Medicine transactions synced',
+      body,
+      details,
+    );
+  }
+
+  static Future<void> showSimpleNotification({
+    required int id,
+    required String title,
+    required String body,
+  }) async {
+    await initialize(requestPermission: false);
+
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
       _channelId,
@@ -63,12 +104,10 @@ class LocalNotificationService {
     );
 
     await _plugin.show(
-      id: 1001,
-      title: 'Medicine transactions synced',
-      body: syncedCount == 1
-          ? '1 pending medicine transaction was synced successfully.'
-          : '$syncedCount pending medicine transactions were synced successfully.',
-      notificationDetails: details,
+      id,
+      title,
+      body,
+      details,
     );
   }
 }
