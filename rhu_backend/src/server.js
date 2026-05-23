@@ -4,6 +4,7 @@ const cors = require("cors");
 const morgan = require("morgan");
 const swaggerUi = require("swagger-ui-express");
 const swaggerDocument = require("./config/swagger");
+const internalRoutes = require("./routes/internal.routes");
 
 dotenv.config();
 
@@ -103,6 +104,7 @@ app.use("/api/appointment-settings", appointmentSettingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/video", videoRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/api/internal", internalRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
