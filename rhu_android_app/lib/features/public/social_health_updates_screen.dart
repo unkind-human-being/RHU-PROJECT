@@ -5,6 +5,7 @@ import '../../core/network/api_exception.dart';
 import '../../core/storage/token_storage_service.dart';
 import '../auth/auth_provider.dart';
 import '../notifications/widgets/notification_badge_button.dart';
+import '../video/incoming_call_watcher.dart';
 
 import 'rhu_ai_chat_sheet.dart';
 
@@ -320,7 +321,9 @@ class _SocialHealthUpdatesScreenState extends State<SocialHealthUpdatesScreen> {
     final AuthProvider authProvider = context.watch<AuthProvider>();
     final String userEmail = authProvider.user?.email ?? 'Public user';
     final List<_FeedItem> displayedItems = _displayedItems;
-    return Scaffold(backgroundColor: const Color(0xFFEFF6FF),
+    
+    return IncomingCallWatcher(
+      child: Scaffold(backgroundColor: const Color(0xFFEFF6FF),
     floatingActionButton: FloatingActionButton(
       heroTag: 'rhu_ai_chat_button',
       backgroundColor: const Color(0xFF0EA5E9),
@@ -496,6 +499,7 @@ class _SocialHealthUpdatesScreenState extends State<SocialHealthUpdatesScreen> {
     ),
     ),
     ),
+      ),
     );
   }
   Future<void> _registerForEvent(_FeedItem item) async {

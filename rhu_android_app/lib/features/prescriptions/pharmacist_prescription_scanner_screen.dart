@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -233,6 +234,20 @@ class _PharmacistPrescriptionScannerScreenState
     };
   }
 
+  bool _isOfflineError(Object error) {
+    final String text = error.toString().toLowerCase();
+
+    return error is TimeoutException ||
+        text.contains('socketexception') ||
+        text.contains('failed host lookup') ||
+        text.contains('connection refused') ||
+        text.contains('connection timed out') ||
+        text.contains('network is unreachable') ||
+        text.contains('clientexception') ||
+        text.contains('xmlhttprequest') ||
+        text.contains('handshakeexception');
+  }
+
   Future<void> _loadPrescriptionByToken(
     String token, {
     Map<String, dynamic>? fallbackPayload,
@@ -250,51 +265,29 @@ class _PharmacistPrescriptionScannerScreenState
 
       final Map<String, dynamic> prescription = _extractMap(response);
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _prescription = prescription;
         _loadedFromQrPayload = false;
         _offlineNotice = null;
       });
-    } on ApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
+    } catch (error) {
+      if (!mounted) return;
 
-      if (fallbackPayload != null) {
+      if (_isOfflineError(error) && fallbackPayload != null) {
         setState(() {
           _prescription = _normalizeQrPayload(fallbackPayload);
           _loadedFromQrPayload = true;
           _offlineNotice =
               'Offline mode: showing details saved inside the QR. Claim will be saved locally and synced later.';
         });
-      } else {
-        setState(() {
-          _errorMessage =
-              '${error.message}\n\nThis QR only contains a token. To work offline, create a new prescription QR after updating the backend QR payload.';
-        });
-      }
-    } catch (_) {
-      if (!mounted) {
         return;
       }
 
-      if (fallbackPayload != null) {
-        setState(() {
-          _prescription = _normalizeQrPayload(fallbackPayload);
-          _loadedFromQrPayload = true;
-          _offlineNotice =
-              'Offline mode: showing details saved inside the QR. Claim will be saved locally and synced later.';
-        });
-      } else {
-        setState(() {
-          _errorMessage =
-              'Unable to load prescription QR.\n\nThis QR only contains a token. To work offline, create a new prescription QR after updating the backend QR payload.';
-        });
-      }
+      setState(() {
+        _errorMessage = error.toString().replaceFirst('Exception: ', '');
+      });
     } finally {
       if (mounted) {
         setState(() {
@@ -345,9 +338,7 @@ class _PharmacistPrescriptionScannerScreenState
       final Map<String, dynamic> updatedPrescription =
           await _sendClaimToServer(claimData);
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _prescription = updatedPrescription;
@@ -360,35 +351,41 @@ class _PharmacistPrescriptionScannerScreenState
           backgroundColor: Color(0xFF16A34A),
         ),
       );
-    } catch (_) {
-      await _savePendingClaim(claimData);
+    } catch (error) {
+      if (!mounted) return;
 
-      if (!mounted) {
+      if (_isOfflineError(error)) {
+        await _savePendingClaim(claimData);
+
+        if (!mounted) return;
+
+        final Map<String, dynamic> localClaimedPrescription =
+            Map<String, dynamic>.from(prescription);
+
+        localClaimedPrescription['status'] = 'pending_sync';
+        localClaimedPrescription['claimedAt'] = claimData['claimedAtLocal'];
+        localClaimedPrescription['pharmacyName'] = claimData['pharmacyName'];
+        localClaimedPrescription['pharmacyLocation'] =
+            claimData['pharmacyLocation'];
+        localClaimedPrescription['claimRemarks'] = claimData['claimRemarks'];
+
+        setState(() {
+          _prescription = localClaimedPrescription;
+          _offlineNotice =
+              'No internet detected. This claim was saved locally and will sync automatically later.';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Claim saved offline. It will sync automatically.'),
+            backgroundColor: Color(0xFFF59E0B),
+          ),
+        );
+
         return;
       }
 
-      final Map<String, dynamic> localClaimedPrescription =
-          Map<String, dynamic>.from(prescription);
-
-      localClaimedPrescription['status'] = 'pending_sync';
-      localClaimedPrescription['claimedAt'] = claimData['claimedAtLocal'];
-      localClaimedPrescription['pharmacyName'] = claimData['pharmacyName'];
-      localClaimedPrescription['pharmacyLocation'] =
-          claimData['pharmacyLocation'];
-      localClaimedPrescription['claimRemarks'] = claimData['claimRemarks'];
-
-      setState(() {
-        _prescription = localClaimedPrescription;
-        _offlineNotice =
-            'No internet detected. This claim was saved locally and will sync automatically later.';
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Claim saved offline. It will sync automatically.'),
-          backgroundColor: Color(0xFFF59E0B),
-        ),
-      );
+      _showError(error.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {
         setState(() {
@@ -541,6 +538,19 @@ class _PharmacistPrescriptionScannerScreenState
         });
       }
     }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: const Color(0xFFDC2626),
+      ),
+    );
+
+    setState(() {
+      _errorMessage = message;
+    });
   }
 
   Future<void> _scanAnother() async {

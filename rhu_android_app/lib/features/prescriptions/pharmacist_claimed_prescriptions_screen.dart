@@ -236,6 +236,14 @@ class _PharmacistClaimedPrescriptionsScreenState
         errorText.contains('xmlhttprequest error');
   }
 
+  bool _isAlreadyClaimedError(Object error) {
+    final String text = error.toString().toLowerCase();
+
+    return text.contains('already claimed') ||
+        text.contains('already been claimed') ||
+        text.contains('prescription already claimed');
+  }
+
   Future<List<Map<String, dynamic>>> _readPendingClaims() async {
     final SharedPreferences preferences = await SharedPreferences.getInstance();
 
@@ -348,20 +356,9 @@ class _PharmacistClaimedPrescriptionsScreenState
         try {
           await _sendClaimToServer(pendingClaim);
           syncedCount++;
-        } on ApiException catch (error) {
-          final String message = error.message.toLowerCase();
-
-          if (message.contains('already claimed') ||
-              message.contains('already been claimed') ||
-              message.contains('status') ||
-              message.contains('not issued')) {
-            syncedCount++;
-          } else {
-            stillPending.add(pendingClaim);
-          }
         } catch (error) {
-          if (_isOfflineError(error)) {
-            stillPending.add(pendingClaim);
+          if (_isAlreadyClaimedError(error)) {
+            syncedCount++;
           } else {
             stillPending.add(pendingClaim);
           }
