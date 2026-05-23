@@ -44,6 +44,26 @@ class _MedicineMonitorScreenState extends State<MedicineMonitorScreen> {
   List<_RhuOption> _rhus = <_RhuOption>[];
   List<_BarangayOption> _barangays = <_BarangayOption>[];
 
+  List<MedicineModel> get _visibleMedicines {
+    final String query = _searchController.text.trim().toLowerCase();
+
+    if (query.isEmpty) {
+      return _medicines;
+    }
+
+    return _medicines.where((MedicineModel medicine) {
+      final String searchableText = <String>[
+        medicine.displayName,
+        medicine.category,
+        medicine.batchNumber,
+        medicine.locationName,
+        medicine.stockStatusLabel,
+      ].join(' ').toLowerCase();
+
+      return searchableText.contains(query);
+    }).toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -141,14 +161,14 @@ class _MedicineMonitorScreenState extends State<MedicineMonitorScreen> {
   }
 
   int get _totalStock {
-    return _medicines.fold<int>(
+    return _visibleMedicines.fold<int>(
       0,
       (int sum, MedicineModel item) => sum + item.currentStock,
     );
   }
 
   int get _alertCount {
-    return _medicines.where((MedicineModel item) {
+    return _visibleMedicines.where((MedicineModel item) {
       return item.isLowStock || item.isOutOfStock || item.isExpired;
     }).length;
   }
@@ -523,6 +543,10 @@ class _MedicineMonitorScreenState extends State<MedicineMonitorScreen> {
   }
 
   void _handleSearchChanged(String value) {
+    setState(() {
+      _hasSearchText = value.trim().isNotEmpty;
+    });
+
     _searchDebounce?.cancel();
 
     _searchDebounce = Timer(const Duration(milliseconds: 500), () {
@@ -665,6 +689,7 @@ class _MedicineMonitorScreenState extends State<MedicineMonitorScreen> {
   @override
   Widget build(BuildContext context) {
     final AuthProvider authProvider = context.watch<AuthProvider>();
+    final List<MedicineModel> visibleMedicines = _visibleMedicines;
 
     final bool shouldSelectRhu = _isIphoAdmin && !_hasSelectedRhu;
     final bool shouldSelectBarangay = _hasSelectedRhu && !_hasSelectedBarangay;
@@ -693,7 +718,7 @@ class _MedicineMonitorScreenState extends State<MedicineMonitorScreen> {
             children: <Widget>[
               _MonitorHeader(
                 assignedLocation: authProvider.assignedLocation,
-                itemCount: _medicines.length,
+                itemCount: visibleMedicines.length,
                 totalStock: _totalStock,
                 alertCount: _alertCount,
               ),
@@ -740,10 +765,12 @@ class _MedicineMonitorScreenState extends State<MedicineMonitorScreen> {
                 )
               else if (_isLoading)
                 const _MedicineLoadingList()
-              else if (_medicines.isEmpty)
-                const _EmptyMedicineState()
+              else if (visibleMedicines.isEmpty)
+                _EmptyMedicineState(
+                  hasSearchText: _hasSearchText,
+                )
               else
-                ..._medicines.map(
+                ...visibleMedicines.map(
                   (MedicineModel medicine) {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
@@ -1466,7 +1493,11 @@ class _ErrorCard extends StatelessWidget {
 }
 
 class _EmptyMedicineState extends StatelessWidget {
-  const _EmptyMedicineState();
+  const _EmptyMedicineState({
+    this.hasSearchText = false,
+  });
+
+  final bool hasSearchText;
 
   @override
   Widget build(BuildContext context) {
@@ -1490,12 +1521,16 @@ class _EmptyMedicineState extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'No medicine records found',
+              hasSearchText
+                  ? 'No matching medicine found'
+                  : 'No medicine records found',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
             Text(
-              'This barangay has no matching medicine records, or the selected filter has no result.',
+              hasSearchText
+                  ? 'Try another medicine name, batch number, category, or clear the search field.'
+                  : 'This barangay has no matching medicine records, or the selected filter has no result.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium,
             ),

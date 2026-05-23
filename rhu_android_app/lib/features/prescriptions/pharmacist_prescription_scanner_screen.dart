@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/network/api_client.dart';
-import '../../core/network/api_exception.dart';
 import '../../core/storage/token_storage_service.dart';
 import '../auth/auth_provider.dart';
 
