@@ -52,7 +52,13 @@ app.use(
           return callback(new Error("Not allowed by CORS."));
         },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Internal-Gateway-Secret",
+      "x-internal-gateway-secret",
+      "x-gateway-secret",
+    ],
     credentials: allowedOrigins.includes("*") ? false : true,
   })
 );
@@ -104,6 +110,7 @@ app.use("/api/appointment-settings", appointmentSettingRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/video", videoRoutes);
 app.use("/api/uploads", uploadRoutes);
+app.use("/", internalRoutes);
 app.use("/api/internal", internalRoutes);
 
 app.use(notFound);

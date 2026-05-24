@@ -4,10 +4,7 @@ const express = require("express");
 const router = express.Router();
 
 // IMPORTANT:
-// Change this import if your user model file has another name.
-// Example alternatives:
-// const User = require("../models/userModel");
-// const User = require("../models/UserModel");
+// If your user model file name is different, change this line.
 const User = require("../models/User");
 
 function verifyGatewaySecret(req, res, next) {
@@ -42,8 +39,6 @@ router.get("/handshake", verifyGatewaySecret, (req, res) => {
   });
 });
 
-// Called by Tawi-Tawi backend:
-// POST https://rhu-project.onrender.com/verify-user
 router.post("/verify-user", verifyGatewaySecret, async (req, res) => {
   try {
     const { tawiTawiUserId, email, fullName } = req.body;
@@ -105,8 +100,6 @@ router.post("/verify-user", verifyGatewaySecret, async (req, res) => {
   }
 });
 
-// Called by Tawi-Tawi backend:
-// POST https://rhu-project.onrender.com/register-user
 router.post("/register-user", verifyGatewaySecret, async (req, res) => {
   try {
     const { tawiTawiUserId, email, fullName, phoneNumber } = req.body;
@@ -135,15 +128,13 @@ router.post("/register-user", verifyGatewaySecret, async (req, res) => {
       });
     }
 
-    // For now, do not auto-create until we confirm your exact User schema.
-    // This prevents creating broken users if your model requires specific fields.
     return res.status(200).json({
       success: true,
       isLinked: false,
       requiresRegistration: true,
       externalUserId: null,
       message:
-        "RHU user does not exist yet. Add create-user logic after confirming the User schema.",
+        "RHU user does not exist yet. Create-user logic needs your User schema fields.",
     });
   } catch (error) {
     console.error("Internal register-user error:", error);
