@@ -92,26 +92,45 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-app.use("/api/auth", authRoutes);
-app.use("/api/rhus", rhuRoutes);
-app.use("/api/barangays", barangayRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/posts", postRoutes);
-app.use("/api/events", eventRoutes);
-app.use("/api/surveys", surveyRoutes);
-app.use("/api/event-registrations", eventRegistrationRoutes);
-app.use("/api/survey-responses", surveyResponseRoutes);
-app.use("/api/medicines", medicineRoutes);
-app.use("/api/sync", syncRoutes);
-app.use("/api/prescriptions", prescriptionRoutes);
-app.use("/api/appointments", appointmentRoutes);
-app.use("/api/consultation-messages", consultationMessageRoutes);
-app.use("/api/appointment-settings", appointmentSettingRoutes);
-app.use("/api/notifications", notificationRoutes);
-app.use("/api/video", videoRoutes);
-app.use("/api/uploads", uploadRoutes);
+
+// Direct internal gateway endpoints:
+// /handshake
+// /verify-user
+// /register-user
 app.use("/", internalRoutes);
-app.use("/api/internal", internalRoutes);
+
+function mountApiRoutes(prefix) {
+  app.use(`${prefix}/auth`, authRoutes);
+  app.use(`${prefix}/rhus`, rhuRoutes);
+  app.use(`${prefix}/barangays`, barangayRoutes);
+  app.use(`${prefix}/users`, userRoutes);
+  app.use(`${prefix}/posts`, postRoutes);
+  app.use(`${prefix}/events`, eventRoutes);
+  app.use(`${prefix}/surveys`, surveyRoutes);
+  app.use(`${prefix}/event-registrations`, eventRegistrationRoutes);
+  app.use(`${prefix}/survey-responses`, surveyResponseRoutes);
+  app.use(`${prefix}/medicines`, medicineRoutes);
+  app.use(`${prefix}/sync`, syncRoutes);
+  app.use(`${prefix}/prescriptions`, prescriptionRoutes);
+  app.use(`${prefix}/appointments`, appointmentRoutes);
+  app.use(`${prefix}/consultation-messages`, consultationMessageRoutes);
+  app.use(`${prefix}/appointment-settings`, appointmentSettingRoutes);
+  app.use(`${prefix}/notifications`, notificationRoutes);
+  app.use(`${prefix}/video`, videoRoutes);
+  app.use(`${prefix}/uploads`, uploadRoutes);
+  app.use(`${prefix}/internal`, internalRoutes);
+}
+
+// Original RHU app routes.
+// Example: /api/rhus
+mountApiRoutes("/api");
+
+// Tawi-Tawi gateway proxy routes.
+// Tawi-Tawi backend currently rewrites:
+// /api/shu/rhus -> /api/v1/rhus
+// /api/shu/posts/public -> /api/v1/posts/public
+// /api/shu/appointments -> /api/v1/appointments
+mountApiRoutes("/api/v1");
 
 app.use(notFound);
 app.use(errorHandler);
