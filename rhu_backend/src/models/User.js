@@ -13,6 +13,8 @@ const USER_ROLES = {
 const AUTH_PROVIDERS = {
   LOCAL: "local",
   GOOGLE: "google",
+  META: "meta",
+  GATEWAY: "gateway",
 };
 
 const fcmTokenSchema = new mongoose.Schema(
@@ -91,6 +93,32 @@ const userSchema = new mongoose.Schema(
       trim: true,
       sparse: true,
       index: true,
+    },
+
+    metaId: {
+      type: String,
+      trim: true,
+      sparse: true,
+      index: true,
+    },
+
+    tawiTawiUserId: {
+      type: String,
+      trim: true,
+      sparse: true,
+      index: true,
+      default: null,
+    },
+
+    linkedFromGateway: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    gatewayLinkedAt: {
+      type: Date,
+      default: null,
     },
 
     rhu: {
