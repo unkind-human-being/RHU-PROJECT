@@ -123,14 +123,7 @@ class _SplashScreenState extends State<SplashScreen> {
                     color: Colors.white.withOpacity(0.14),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
-                    'Offline sync ready • MongoDB Atlas backend',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+                  
                 ),
               ],
             ),
